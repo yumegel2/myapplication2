@@ -35,6 +35,7 @@ import com.example.myapplication.ui.theme.SoftLavender
 @Composable
 fun LiveCoachingScreen(viewModel: LiveCoachingViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
+    val results by viewModel.results.collectAsState()
     val apiKey = BuildConfig.GENAI_API_KEY
     var expanded by remember { mutableStateOf(false) }
     var selectedScenario by remember { mutableStateOf("Interview") }
@@ -71,6 +72,7 @@ fun LiveCoachingScreen(viewModel: LiveCoachingViewModel = androidx.lifecycle.vie
     var showTips by remember { mutableStateOf(false) }
     var showApiWarning by remember { mutableStateOf(false) }
     var lastSubmitted by remember { mutableStateOf("") }
+    var lastResponse by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
     fun onEnterReflection() {
@@ -79,8 +81,21 @@ fun LiveCoachingScreen(viewModel: LiveCoachingViewModel = androidx.lifecycle.vie
         } else {
             showApiWarning = false
             lastSubmitted = reflection
+            android.util.Log.d("LiveCoachingScreen", "Submitting reflection: $reflection")
             viewModel.submitReflection(reflection, selectedScenario)
             reflection = ""
+        }
+    }
+    
+    // Update lastResponse whenever results change
+    LaunchedEffect(key1 = results.size) {
+        android.util.Log.d("LiveCoachingScreen", "LaunchedEffect triggered, results size: ${results.size}")
+        if (results.isNotEmpty()) {
+            val latestResponse = results.last().response
+            android.util.Log.d("LiveCoachingScreen", "Setting lastResponse to: ${latestResponse.take(50)}...")
+            lastResponse = latestResponse
+        } else {
+            android.util.Log.d("LiveCoachingScreen", "Results list is empty")
         }
     }
 
@@ -354,19 +369,113 @@ fun LiveCoachingScreen(viewModel: LiveCoachingViewModel = androidx.lifecycle.vie
                 }
                 
                 if (lastSubmitted.isNotBlank() && !showApiWarning) {
+                    // Display the latest response directly in this screen
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
                         colors = CardDefaults.cardColors(
-                            containerColor = AccentGreen.copy(alpha = 0.2f)
-                        )
+                            containerColor = PrimaryBlue.copy(alpha = 0.1f)
+                        ),
+                        elevation = CardDefaults.cardElevation(2.dp),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(
-                            "Reflection submitted! Check the Results screen to see your feedback.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp),
-                            textAlign = TextAlign.Center
-                        )
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Your Reflection:",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = PrimaryBlue
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                lastSubmitted,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Text(
+                                "Coach's Feedback:",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = PrimaryBlue
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            
+                            if (uiState is LiveCoachingUiState.Loading) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = PrimaryBlue,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Text(
+                                        "Generating feedback...",
+                                        modifier = Modifier.padding(start = 8.dp),
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            } else if (lastResponse.isNotEmpty()) {
+                                Text(
+                                    lastResponse,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else if (results.isNotEmpty()) {
+                                Text(
+                                    results.last().response,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            } else {
+                                Text(
+                                    "Waiting for response...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Debug information card
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        elevation = CardDefaults.cardElevation(2.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Debug Information",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Text("UI State: ${uiState.javaClass.simpleName}")
+                            Text("Results Size: ${results.size}")
+                            Text("Last Response Set: ${lastResponse.isNotEmpty()}")
+                            Text("API Key Present: ${apiKey.isNotBlank() && apiKey != "MISSING_GENAI_API_KEY"}")
+                            
+                            if (results.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Latest Result:")
+                                Text("- Transcript: ${results.last().transcript.take(20)}...")
+                                Text("- Response: ${results.last().response.take(20)}...")
+                            }
+                            
+                            if (uiState is LiveCoachingUiState.Error) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "Error: ${(uiState as LiveCoachingUiState.Error).message}",
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
                     }
                 }
                 
