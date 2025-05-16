@@ -1,36 +1,41 @@
 package com.example.myapplication
 
-
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.myapplication.ui.theme.PrimaryBlue
+import com.example.myapplication.ui.theme.AccentGreen
+import com.example.myapplication.ui.theme.SoftLavender
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LiveCoachingScreen() {
+fun LiveCoachingScreen(viewModel: LiveCoachingViewModel = androidx.lifecycle.viewmodel.compose.viewModel()) {
+    val uiState by viewModel.uiState.collectAsState()
+    val apiKey = BuildConfig.GENAI_API_KEY
     var expanded by remember { mutableStateOf(false) }
     var selectedScenario by remember { mutableStateOf("Interview") }
     val scenarios = listOf("Interview", "First Date", "Team Meeting", "Negotiation", "Networking Event")
@@ -61,19 +66,21 @@ fun LiveCoachingScreen() {
             "Follow up after the event."
         )
     )
+
     var reflection by remember { mutableStateOf("") }
     var showTips by remember { mutableStateOf(false) }
-    var apiKey by remember { mutableStateOf(System.getenv("GENAI_API_KEY") ?: "") }
     var showApiWarning by remember { mutableStateOf(false) }
     var lastSubmitted by remember { mutableStateOf("") }
+    val scrollState = rememberScrollState()
 
     fun onEnterReflection() {
-        if (apiKey.isBlank()) {
+        if (apiKey.isBlank() || apiKey == "MISSING_GENAI_API_KEY") {
             showApiWarning = true
         } else {
-            // TODO: Use the API key to process the reflection (e.g., send to backend or AI service)
             showApiWarning = false
             lastSubmitted = reflection
+            viewModel.submitReflection(reflection, selectedScenario)
+            reflection = ""
         }
     }
 
@@ -81,78 +88,293 @@ fun LiveCoachingScreen() {
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text("Live Coaching", style = MaterialTheme.typography.headlineSmall)
-            Spacer(modifier = Modifier.height(16.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                modifier = Modifier.clickable { expanded = true }
+        Scaffold(
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = {
+                        Text(
+                            "Live Coaching",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background
+                    )
+                )
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 20.dp)
+                    .verticalScroll(scrollState),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Scenario: $selectedScenario", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
-            }
-            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                scenarios.forEach { scenario ->
-                    DropdownMenuItem(text = { Text(scenario) }, onClick = {
-                        selectedScenario = scenario
-                        expanded = false
-                        showTips = false
-                    })
+                // Scenario selector
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { expanded = !expanded },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Scenario: $selectedScenario",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = PrimaryBlue
+                            )
+                            Icon(
+                                imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                contentDescription = if (expanded) "Collapse" else "Expand",
+                                tint = PrimaryBlue
+                            )
+                        }
+                        
+                        AnimatedVisibility(
+                            visible = expanded,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(modifier = Modifier.padding(top = 8.dp)) {
+                                scenarios.forEach { scenario ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                selectedScenario = scenario
+                                                expanded = false
+                                            }
+                                            .padding(vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        RadioButton(
+                                            selected = selectedScenario == scenario,
+                                            onClick = {
+                                                selectedScenario = scenario
+                                                expanded = false
+                                            },
+                                            colors = RadioButtonDefaults.colors(
+                                                selectedColor = PrimaryBlue
+                                            )
+                                        )
+                                        Text(
+                                            scenario,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                modifier = Modifier.clickable { showTips = !showTips }
-            ) {
-                Text(
-                    if (showTips) "Hide Tips" else "Show Tips",
-                    modifier = Modifier.padding(16.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (showTips) {
-                tips[selectedScenario]?.forEach { tip ->
-                    Text("• $tip", style = MaterialTheme.typography.bodyLarge)
+                
+                // Tips section
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = SoftLavender.copy(alpha = 0.2f)
+                    ),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showTips = !showTips },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Filled.Lightbulb,
+                                    contentDescription = "Tips",
+                                    tint = PrimaryBlue,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Text(
+                                    "Coaching Tips",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(start = 8.dp),
+                                    color = PrimaryBlue
+                                )
+                            }
+                            Icon(
+                                imageVector = if (showTips) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                contentDescription = if (showTips) "Hide tips" else "Show tips",
+                                tint = PrimaryBlue
+                            )
+                        }
+                        
+                        AnimatedVisibility(
+                            visible = showTips,
+                            enter = fadeIn() + expandVertically(),
+                            exit = fadeOut() + shrinkVertically()
+                        ) {
+                            Column(modifier = Modifier.padding(top = 12.dp)) {
+                                tips[selectedScenario]?.forEach { tip ->
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .padding(top = 8.dp)
+                                                .background(AccentGreen, CircleShape)
+                                        )
+                                        Text(
+                                            tip,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-            Spacer(modifier = Modifier.height(24.dp))
-            Text("Reflection Prompt:", style = MaterialTheme.typography.bodyMedium)
-            OutlinedTextField(
-                value = reflection,
-                onValueChange = { reflection = it },
-                label = { Text("What is one thing you want to try in your next ${selectedScenario.lowercase()}?") },
-                singleLine = false,
-                modifier = Modifier.fillMaxWidth(0.85f)
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            androidx.compose.material3.Button(onClick = { onEnterReflection() }) {
-                Text("Enter")
-            }
-            if (showApiWarning) {
-                Text(
-                    "API key missing! Please set your GENAI_API_KEY in your environment for full functionality.",
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            if (lastSubmitted.isNotBlank() && !showApiWarning) {
-                Text(
-                    "Reflection submitted!",
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                
+                // Reflection input
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(2.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Info,
+                                contentDescription = "Reflection",
+                                tint = PrimaryBlue,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                "Reflection Prompt",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.padding(start = 8.dp),
+                                color = PrimaryBlue
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        OutlinedTextField(
+                            value = reflection,
+                            onValueChange = { reflection = it },
+                            label = { Text("What is one thing you want to try in your next ${selectedScenario.lowercase()}?") },
+                            singleLine = false,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            minLines = 3,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = PrimaryBlue,
+                                cursorColor = PrimaryBlue
+                            )
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Submit button
+                        Button(
+                            onClick = { onEnterReflection() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+                            enabled = reflection.isNotBlank() && uiState !is LiveCoachingUiState.Loading,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryBlue,
+                                disabledContainerColor = PrimaryBlue.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (uiState is LiveCoachingUiState.Loading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Text(
+                                        "Generating feedback...",
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Filled.Send,
+                                        contentDescription = "Submit",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        "Submit Reflection",
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Status messages
+                if (showApiWarning) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            "API key missing! Please set your GENAI_API_KEY in your environment for full functionality.",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                
+                if (lastSubmitted.isNotBlank() && !showApiWarning) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = AccentGreen.copy(alpha = 0.2f)
+                        )
+                    ) {
+                        Text(
+                            "Reflection submitted! Check the Results screen to see your feedback.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(16.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
     }
 }
-
-
-
-
 
 @Preview
 @Composable

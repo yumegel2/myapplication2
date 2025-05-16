@@ -39,6 +39,12 @@ android {
         compose = true
         buildConfig = true
     }
+    
+    // Set up Gemini API key
+    android.buildTypes.all {
+        val apiKey = providers.gradleProperty("GENAI_API_KEY").orNull ?: System.getenv("GENAI_API_KEY") ?: ""
+        buildConfigField("String", "GENAI_API_KEY", "\"${apiKey}\"")
+    }
 }
 
 dependencies {
@@ -55,6 +61,13 @@ dependencies {
     implementation(libs.generativeai)
     implementation(libs.androidx.navigation.runtime.android)
     implementation(libs.androidx.navigation.compose.android)
+    
+    // Material Icons Extended - contains additional icon sets
+    implementation("androidx.compose.material:material-icons-extended:1.6.1")
+    
+    // Google Fonts for Compose
+    implementation("androidx.compose.ui:ui-text-google-fonts:1.6.1")
+    
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

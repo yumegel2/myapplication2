@@ -13,17 +13,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.google.ai.client.generativeai.GenerativeModel
+import com.example.myapplication.BuildConfig
+import android.util.Log
 
 sealed class LiveCoachingUiState {
     object Idle : LiveCoachingUiState()
     object Listening : LiveCoachingUiState()
-    data class Result(val transcript: String) : LiveCoachingUiState()
+    object Loading : LiveCoachingUiState()
     data class Error(val message: String) : LiveCoachingUiState()
 }
+
+data class CoachingResult(val transcript: String, val response: String)
 
 class LiveCoachingViewModel(app: Application) : AndroidViewModel(app) {
     private val _uiState = MutableStateFlow<LiveCoachingUiState>(LiveCoachingUiState.Idle)
     val uiState: StateFlow<LiveCoachingUiState> = _uiState.asStateFlow()
+
+    private val _results = MutableStateFlow<List<CoachingResult>>(emptyList())
+    val results: StateFlow<List<CoachingResult>> = _results.asStateFlow()
 
     private var speechRecognizer: SpeechRecognizer? = null
 
@@ -50,12 +58,19 @@ class LiveCoachingViewModel(app: Application) : AndroidViewModel(app) {
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val transcript = matches?.firstOrNull() ?: ""
-                _uiState.value = LiveCoachingUiState.Result(transcript)
+                if (transcript.isNotBlank()) {
+                    viewModelScope.launch {
+                        val response = generateResponse(transcript)
+                        val newResult = CoachingResult(transcript, response)
+                        _results.value = _results.value + newResult
+                    }
+                }
+                _uiState.value = LiveCoachingUiState.Idle
             }
             override fun onPartialResults(partialResults: Bundle?) {
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val transcript = matches?.firstOrNull() ?: ""
-                _uiState.value = LiveCoachingUiState.Result(transcript)
+                // Optionally handle partial results, but don't save until final
             }
             override fun onEvent(eventType: Int, params: Bundle?) {}
         })
@@ -70,5 +85,33 @@ class LiveCoachingViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         speechRecognizer?.destroy()
         super.onCleared()
+    }
+
+    private suspend fun generateResponse(transcript: String): String {
+        return try {
+            val generativeModel = GenerativeModel(
+                modelName = "gemini-pro",
+                apiKey = BuildConfig.GENAI_API_KEY
+            )
+            val prompt = "You are a supportive conversation coach. Give helpful, friendly, and actionable feedback to the following user's statement: \"$transcript\"."
+            val response = generativeModel.generateContent(prompt)
+            response.text ?: "Great job! Keep practicing."
+        } catch (e: Exception) {
+            "(AI unavailable) Good job! Keep practicing."
+        }
+    }
+
+    fun submitReflection(reflection: String, scenario: String) {
+        Log.d("LiveCoachingVM", "submitReflection called with: $reflection, scenario: $scenario")
+        viewModelScope.launch {
+            _uiState.value = LiveCoachingUiState.Loading
+            val prompt = "Scenario: $scenario. Reflection: $reflection"
+            val response = generateResponse(prompt)
+            val newResult = CoachingResult(reflection, response)
+            Log.d("LiveCoachingVM", "Adding result: $newResult")
+            _results.value = _results.value + newResult
+            Log.d("LiveCoachingVM", "Results list now: ${_results.value}")
+            _uiState.value = LiveCoachingUiState.Idle
+        }
     }
 }
